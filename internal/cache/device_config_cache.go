@@ -14,21 +14,17 @@ import (
 )
 
 type DeviceConfigCache struct {
-	ID                uint      `json:"id"`
-	DeviceID          uint      `json:"device_id"`
-	DeviceCode        string    `json:"device_code"`
-	TargetTemp        *float64  `json:"target_temp"`
-	TempTolerance     *float64  `json:"temp_tolerance"`
-	ValveMinOpen      *int      `json:"valve_min_open"`
-	ValveMaxOpen      *int      `json:"valve_max_open"`
-	FanMinSpeed       *int      `json:"fan_min_speed"`
-	FanMaxSpeed       *int      `json:"fan_max_speed"`
-	TargetHumidity    *float64  `json:"target_humidity"`
-	HumidityTolerance *float64  `json:"humidity_tolerance"`
-	SprayInterval     *int      `json:"spray_interval"`
-	SprayDuration     *int      `json:"spray_duration"`
-	Version           int       `json:"version"`
-	UpdateTime        time.Time `json:"update_time"`
+	TargetTemp        *float64 `json:"target_temp,omitempty"`
+	TempTolerance     *float64 `json:"temp_tolerance,omitempty"`
+	ValveMinOpen      *int     `json:"valve_min_open,omitempty"`
+	ValveMaxOpen      *int     `json:"valve_max_open,omitempty"`
+	FanMinSpeed       *int     `json:"fan_min_speed,omitempty"`
+	FanMaxSpeed       *int     `json:"fan_max_speed,omitempty"`
+	TargetHumidity    *float64 `json:"target_humidity,omitempty"`
+	HumidityTolerance *float64 `json:"humidity_tolerance,omitempty"`
+	SprayInterval     *int     `json:"spray_interval,omitempty"`
+	SprayDuration     *int     `json:"spray_duration,omitempty"`
+	Version           int      `json:"version,omitempty"`
 }
 
 type DeviceConfigCacheManager interface {
@@ -60,7 +56,6 @@ func (m *deviceConfigCacheManager) key(deviceCode string) string {
 
 func (m *deviceConfigCacheManager) Set(deviceCode string, config *DeviceConfigCache) error {
 	ctx := context.Background()
-	config.UpdateTime = time.Now()
 
 	data, err := json.Marshal(config)
 	if err != nil {
@@ -74,7 +69,7 @@ func (m *deviceConfigCacheManager) Set(deviceCode string, config *DeviceConfigCa
 		return err
 	}
 
-	logger.Debugf("device config cache set: %s", deviceCode)
+	logger.Debugf("device config cache set: %s, size: %d bytes", deviceCode, len(data))
 	return nil
 }
 
@@ -112,9 +107,6 @@ func (m *deviceConfigCacheManager) Delete(deviceCode string) error {
 
 func (m *deviceConfigCacheManager) UpdateFromConfig(config *models.DeviceConfig) error {
 	cacheConfig := &DeviceConfigCache{
-		ID:                config.ID,
-		DeviceID:          config.DeviceID,
-		DeviceCode:        config.DeviceCode,
 		TargetTemp:        config.TargetTemp,
 		TempTolerance:     config.TempTolerance,
 		ValveMinOpen:      config.ValveMinOpen,

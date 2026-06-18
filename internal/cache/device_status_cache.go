@@ -14,15 +14,12 @@ import (
 )
 
 type DeviceStatusCache struct {
-	DeviceID        uint      `json:"device_id"`
-	DeviceCode      string    `json:"device_code"`
-	ValveOpen       *float64  `json:"valve_open"`
-	FanSpeed        *int      `json:"fan_speed"`
-	CurrentTemp     *float64  `json:"current_temp"`
-	CurrentHumidity *float64  `json:"current_humidity"`
-	SprayStatus     *int      `json:"spray_status"`
-	ReportTime      time.Time `json:"report_time"`
-	UpdateTime      time.Time `json:"update_time"`
+	ValveOpen       *float64 `json:"valve_open,omitempty"`
+	FanSpeed        *int     `json:"fan_speed,omitempty"`
+	CurrentTemp     *float64 `json:"current_temp,omitempty"`
+	CurrentHumidity *float64 `json:"current_humidity,omitempty"`
+	SprayStatus     *int     `json:"spray_status,omitempty"`
+	ReportTimestamp int64    `json:"report_timestamp,omitempty"`
 }
 
 type DeviceStatusCacheManager interface {
@@ -54,7 +51,6 @@ func (m *deviceStatusCacheManager) key(deviceCode string) string {
 
 func (m *deviceStatusCacheManager) Set(deviceCode string, status *DeviceStatusCache) error {
 	ctx := context.Background()
-	status.UpdateTime = time.Now()
 
 	data, err := json.Marshal(status)
 	if err != nil {
@@ -68,7 +64,7 @@ func (m *deviceStatusCacheManager) Set(deviceCode string, status *DeviceStatusCa
 		return err
 	}
 
-	logger.Debugf("device status cache set: %s", deviceCode)
+	logger.Debugf("device status cache set: %s, size: %d bytes", deviceCode, len(data))
 	return nil
 }
 
@@ -106,14 +102,12 @@ func (m *deviceStatusCacheManager) Delete(deviceCode string) error {
 
 func (m *deviceStatusCacheManager) UpdateFromReport(report *models.DeviceReport) error {
 	status := &DeviceStatusCache{
-		DeviceID:        report.DeviceID,
-		DeviceCode:      report.DeviceCode,
 		ValveOpen:       report.ValveOpen,
 		FanSpeed:        report.FanSpeed,
 		CurrentTemp:     report.CurrentTemp,
 		CurrentHumidity: report.CurrentHumidity,
 		SprayStatus:     report.SprayStatus,
-		ReportTime:      report.ReportTime,
+		ReportTimestamp: report.ReportTime.Unix(),
 	}
 
 	return m.Set(report.DeviceCode, status)

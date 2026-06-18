@@ -58,7 +58,7 @@ func (s *deviceConfigService) CreateConfig(config *models.DeviceConfig) error {
 		return err
 	}
 
-	err = s.SyncConfigToCache(device.DeviceCode)
+	err = s.configCache.UpdateFromConfig(config)
 	if err != nil {
 		logger.Warnf("sync config to cache failed: %v", err)
 	}
@@ -73,11 +73,6 @@ func (s *deviceConfigService) UpdateConfig(config *models.DeviceConfig) error {
 		return errors.New("配置不存在")
 	}
 
-	device, err := s.deviceRepo.GetByID(existing.DeviceID)
-	if err != nil {
-		return errors.New("关联设备不存在")
-	}
-
 	config.DeviceID = existing.DeviceID
 	config.DeviceCode = existing.DeviceCode
 	config.Version = existing.Version
@@ -88,13 +83,54 @@ func (s *deviceConfigService) UpdateConfig(config *models.DeviceConfig) error {
 		return err
 	}
 
-	err = s.SyncConfigToCache(device.DeviceCode)
+	updatedConfig := mergeConfigFields(existing, config)
+
+	err = s.configCache.UpdateFromConfig(updatedConfig)
 	if err != nil {
 		logger.Warnf("sync config to cache failed: %v", err)
 	}
 
-	logger.Infof("device config updated: device_id=%d, version=%d", config.DeviceID, config.Version)
+	logger.Infof("device config updated: device_id=%d, version=%d", config.DeviceID, updatedConfig.Version)
 	return nil
+}
+
+func mergeConfigFields(base, update *models.DeviceConfig) *models.DeviceConfig {
+	merged := *base
+
+	if update.TargetTemp != nil {
+		merged.TargetTemp = update.TargetTemp
+	}
+	if update.TempTolerance != nil {
+		merged.TempTolerance = update.TempTolerance
+	}
+	if update.ValveMinOpen != nil {
+		merged.ValveMinOpen = update.ValveMinOpen
+	}
+	if update.ValveMaxOpen != nil {
+		merged.ValveMaxOpen = update.ValveMaxOpen
+	}
+	if update.FanMinSpeed != nil {
+		merged.FanMinSpeed = update.FanMinSpeed
+	}
+	if update.FanMaxSpeed != nil {
+		merged.FanMaxSpeed = update.FanMaxSpeed
+	}
+	if update.TargetHumidity != nil {
+		merged.TargetHumidity = update.TargetHumidity
+	}
+	if update.HumidityTolerance != nil {
+		merged.HumidityTolerance = update.HumidityTolerance
+	}
+	if update.SprayInterval != nil {
+		merged.SprayInterval = update.SprayInterval
+	}
+	if update.SprayDuration != nil {
+		merged.SprayDuration = update.SprayDuration
+	}
+
+	merged.Version = update.Version
+
+	return &merged
 }
 
 func (s *deviceConfigService) DeleteConfig(id uint) error {
