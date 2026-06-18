@@ -2,6 +2,7 @@ package service
 
 import (
 	"errors"
+	"fmt"
 	"incubator-backend/internal/cache"
 	"incubator-backend/internal/models"
 	"incubator-backend/internal/repository"
@@ -15,7 +16,7 @@ type DeviceReportService interface {
 	GetLatestReport(deviceID uint) (*models.DeviceReport, error)
 	GetLatestReportByCode(deviceCode string) (*models.DeviceReport, error)
 	ListReports(deviceID uint, startTime, endTime time.Time, page, pageSize int) ([]*models.DeviceReport, int64, error)
-	ReportDeviceData(deviceCode string, data *DeviceReportData) error
+	ReportDeviceData(deviceCode string, data *DeviceReportData) (*SafetyCheckResult, error)
 	GetCachedStatus(deviceCode string) (*cache.DeviceStatusCache, error)
 	SyncAllStatusFromDB() error
 }
@@ -30,20 +31,23 @@ type DeviceReportData struct {
 }
 
 type deviceReportService struct {
-	reportRepo  repository.DeviceReportRepository
-	deviceRepo  repository.DeviceRepository
-	statusCache cache.DeviceStatusCacheManager
+	reportRepo    repository.DeviceReportRepository
+	deviceRepo    repository.DeviceRepository
+	statusCache   cache.DeviceStatusCacheManager
+	safetyService SafetyService
 }
 
 func NewDeviceReportService(
 	reportRepo repository.DeviceReportRepository,
 	deviceRepo repository.DeviceRepository,
 	statusCache cache.DeviceStatusCacheManager,
+	safetyService SafetyService,
 ) DeviceReportService {
 	return &deviceReportService{
-		reportRepo:  reportRepo,
-		deviceRepo:  deviceRepo,
-		statusCache: statusCache,
+		reportRepo:    reportRepo,
+		deviceRepo:    deviceRepo,
+		statusCache:   statusCache,
+		safetyService: safetyService,
 	}
 }
 
@@ -94,15 +98,24 @@ func (s *deviceReportService) ListReports(deviceID uint, startTime, endTime time
 	return s.reportRepo.ListByDevice(deviceID, startTime, endTime, page, pageSize)
 }
 
-func (s *deviceReportService) ReportDeviceData(deviceCode string, data *DeviceReportData) error {
+func (s *deviceReportService) ReportDeviceData(deviceCode string, data *DeviceReportData) (*SafetyCheckResult, error) {
 	device, err := s.deviceRepo.GetByCode(deviceCode)
 	if err != nil {
 		logger.Errorf("device not found for report: %s", deviceCode)
-		return errors.New("设备不存在")
+		return nil, errors.New("设备不存在")
 	}
 
-	if device.Status != 1 {
-		return errors.New("设备已禁用")
+	if device.Status == models.DeviceStatusDisabled {
+		return nil, errors.New("设备已禁用")
+	}
+
+	if device.Status == models.DeviceStatusEmergency {
+		return nil, fmt.Errorf("设备已处于异常停机状态，请先解除报警")
+	}
+
+	checkResult, err := s.safetyService.CheckDeviceReport(device, data)
+	if err != nil {
+		logger.Errorf("safety check failed for device %s: %v", deviceCode, err)
 	}
 
 	reportTime := data.ReportTime
@@ -124,7 +137,7 @@ func (s *deviceReportService) ReportDeviceData(deviceCode string, data *DeviceRe
 	err = s.reportRepo.Create(report)
 	if err != nil {
 		logger.Errorf("save device report failed: %v", err)
-		return err
+		return nil, err
 	}
 
 	err = s.statusCache.UpdateFromReport(report)
@@ -132,10 +145,17 @@ func (s *deviceReportService) ReportDeviceData(deviceCode string, data *DeviceRe
 		logger.Warnf("sync report to cache failed: %v", err)
 	}
 
-	logger.Debugf("device data reported: %s, valve_open=%v, fan_speed=%v",
-		deviceCode, data.ValveOpen, data.FanSpeed)
+	if checkResult != nil && checkResult.Triggered {
+		_, shutdownErr := s.safetyService.TriggerEmergencyShutdown(device, checkResult)
+		if shutdownErr != nil {
+			logger.Errorf("emergency shutdown failed for device %s: %v", deviceCode, shutdownErr)
+		}
+	}
 
-	return nil
+	logger.Debugf("device data reported: %s, valve_open=%v, fan_speed=%v, temp=%v",
+		deviceCode, data.ValveOpen, data.FanSpeed, data.CurrentTemp)
+
+	return checkResult, nil
 }
 
 func (s *deviceReportService) GetCachedStatus(deviceCode string) (*cache.DeviceStatusCache, error) {

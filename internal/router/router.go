@@ -19,16 +19,20 @@ func SetupRouter(r *gin.Engine) {
 	deviceRepo := repository.NewDeviceRepository()
 	configRepo := repository.NewDeviceConfigRepository()
 	reportRepo := repository.NewDeviceReportRepository()
+	alarmRepo := repository.NewAlarmRepository()
 
 	statusCache := cache.NewDeviceStatusCacheManager()
 	configCache := cache.NewDeviceConfigCacheManager()
 
 	authService := service.NewAuthService(userRepo)
+	alarmService := service.NewAlarmService(alarmRepo)
+	safetyService := service.NewSafetyService(alarmRepo, deviceRepo)
 	deviceService := service.NewDeviceService(deviceRepo)
 	configService := service.NewDeviceConfigService(configRepo, deviceRepo, configCache)
-	reportService := service.NewDeviceReportService(reportRepo, deviceRepo, statusCache)
+	reportService := service.NewDeviceReportService(reportRepo, deviceRepo, statusCache, safetyService)
 
 	authHandler := handler.NewAuthHandler(authService)
+	alarmHandler := handler.NewAlarmHandler(alarmService, safetyService)
 	deviceHandler := handler.NewDeviceHandler(deviceService)
 	configHandler := handler.NewDeviceConfigHandler(configService)
 	reportHandler := handler.NewDeviceReportHandler(reportService)
@@ -51,6 +55,8 @@ func SetupRouter(r *gin.Engine) {
 			devices.POST("", authMiddleware.AdminRequired(), deviceHandler.Create)
 			devices.PUT("/:id", authMiddleware.AdminRequired(), deviceHandler.Update)
 			devices.DELETE("/:id", authMiddleware.AdminRequired(), deviceHandler.Delete)
+
+			devices.POST("/:device_id/recover", authMiddleware.AdminRequired(), alarmHandler.RecoverDevice)
 		}
 
 		configs := api.Group("/device-configs")
@@ -75,6 +81,15 @@ func SetupRouter(r *gin.Engine) {
 			reports.GET("/latest/code/:device_code", reportHandler.GetLatest)
 			reports.GET("/cache/:device_code", reportHandler.GetCachedStatus)
 			reports.POST("/sync-all", authMiddleware.AdminRequired(), reportHandler.SyncAllFromDB)
+		}
+
+		alarms := api.Group("/alarms")
+		alarms.Use(authMiddleware.AuthRequired())
+		{
+			alarms.GET("", alarmHandler.List)
+			alarms.GET("/:id", alarmHandler.GetByID)
+			alarms.GET("/active/device/:device_id", alarmHandler.GetActiveByDevice)
+			alarms.POST("/:id/resolve", authMiddleware.AdminRequired(), alarmHandler.Resolve)
 		}
 	}
 

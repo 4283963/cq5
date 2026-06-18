@@ -13,6 +13,7 @@ func AutoMigrate() error {
 		&Device{},
 		&DeviceConfig{},
 		&DeviceReport{},
+		&DeviceAlarm{},
 	)
 	if err != nil {
 		logger.Errorf("migration failed: %v", err)

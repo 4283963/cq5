@@ -66,7 +66,7 @@ func (h *DeviceReportHandler) Report(c *gin.Context) {
 		ReportTime:      reportTime,
 	}
 
-	err := h.reportService.ReportDeviceData(deviceCode, reportData)
+	checkResult, err := h.reportService.ReportDeviceData(deviceCode, reportData)
 	if err != nil {
 		logger.Warnf("report device data failed: %s, %v", deviceCode, err)
 		c.JSON(http.StatusBadRequest, gin.H{
@@ -76,10 +76,23 @@ func (h *DeviceReportHandler) Report(c *gin.Context) {
 		return
 	}
 
-	c.JSON(http.StatusOK, gin.H{
+	response := gin.H{
 		"code":    200,
 		"message": "上报成功",
-	})
+	}
+
+	if checkResult != nil && checkResult.Triggered {
+		response["warning"] = gin.H{
+			"alarm_type":    checkResult.AlarmType,
+			"alarm_level":   checkResult.AlarmLevel,
+			"trigger_value": checkResult.TriggerValue,
+			"threshold":     checkResult.Threshold,
+			"description":   checkResult.Description,
+		}
+		response["message"] = checkResult.Description
+	}
+
+	c.JSON(http.StatusOK, response)
 }
 
 func (h *DeviceReportHandler) GetLatest(c *gin.Context) {
